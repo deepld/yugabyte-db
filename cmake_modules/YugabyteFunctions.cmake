@@ -540,6 +540,7 @@ function(parse_build_root_basename)
   set(ENV{YB_COMPILER_TYPE} "${YB_COMPILER_TYPE_FROM_BUILD_ROOT_BASENAME}")
 
   list(GET YB_BUILD_ROOT_BASENAME_COMPONENTS 2 YB_LINKING_TYPE)
+  set(YB_LINKING_TYPE "static")
   if(NOT "${YB_LINKING_TYPE}" MATCHES "^(static|dynamic)$")
     message(
         FATAL_ERROR
