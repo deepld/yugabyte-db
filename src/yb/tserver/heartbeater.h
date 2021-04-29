@@ -68,6 +68,8 @@ class HeartbeatDataProvider {
   TabletServer& server_;
 };
 
+
+// 不同的provider可以填充自己的信息，在 heartbeat 中
 // Component of the Tablet Server which is responsible for heartbeating to the
 // leader master.
 //
@@ -83,6 +85,7 @@ class Heartbeater {
   CHECKED_STATUS Start();
   CHECKED_STATUS Stop();
 
+  // ASAP：mean as soon as possiable
   // Trigger a heartbeat as soon as possible, even if the normal
   // heartbeat interval has not expired.
   void TriggerASAP();
@@ -96,6 +99,8 @@ class Heartbeater {
   gscoped_ptr<Thread> thread_;
 };
 
+// 定期添加信息到 heartbeat 中，可以设置 provider 自己的时间周期
+//    添加2个：metric、split 信息汇报
 class PeriodicalHeartbeatDataProvider : public HeartbeatDataProvider {
  public:
   PeriodicalHeartbeatDataProvider(TabletServer* server, const MonoDelta& period) :

@@ -19,6 +19,7 @@
 namespace yb {
 namespace tserver {
 
+// 注册 heartbeat 中要添加的内容
 std::unique_ptr<Heartbeater> CreateHeartbeater(
     const TabletServerOptions& options, TabletServer* server) {
   std::vector<std::unique_ptr<HeartbeatDataProvider>> data_providers;

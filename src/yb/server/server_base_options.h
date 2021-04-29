@@ -48,6 +48,7 @@ class Env;
 
 namespace server {
 
+// 多个master；每个 master 可能有多个 ip port
 typedef std::vector<std::vector<HostPort>> MasterAddresses;
 typedef std::shared_ptr<const MasterAddresses> MasterAddressesPtr;
 

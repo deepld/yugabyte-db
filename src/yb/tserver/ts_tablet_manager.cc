@@ -765,6 +765,7 @@ Result<TabletPeerPtr> TSTabletManager::CreateNewTablet(
   // Set the initial opid_index for a RaftConfigPB to -1.
   config.set_opid_index(consensus::kInvalidOpIdIndex);
 
+  // 加入到记录变更状态的 transition_in_progress_ 中，如果此时rpc线程再收到其他操作，可以直接拒绝；函数完成之后，自动从变更 map 中删除
   scoped_refptr<TransitionInProgressDeleter> deleter =
       VERIFY_RESULT(StartTabletStateTransitionForCreation(tablet_id));
 
@@ -772,8 +773,12 @@ Result<TabletPeerPtr> TSTabletManager::CreateNewTablet(
   TRACE("Creating new metadata...");
   string data_root_dir;
   string wal_root_dir;
+
+  // 分配 data、log 目录，尽量平均分配在每个root dir中
   GetAndRegisterDataAndWalDir(
       fs_manager_, table_info->table_id, tablet_id, &data_root_dir, &wal_root_dir);
+
+  // meta 写入到磁盘中
   auto create_result = RaftGroupMetadata::CreateNew(tablet::RaftGroupMetadataData {
     .fs_manager = fs_manager_,
     .table_info = table_info,
@@ -799,6 +804,7 @@ Result<TabletPeerPtr> TSTabletManager::CreateNewTablet(
                         "Unable to create new ConsensusMeta for tablet " + tablet_id);
   TabletPeerPtr new_peer = VERIFY_RESULT(CreateAndRegisterTabletPeer(meta, NEW_PEER));
 
+  // 异步方式执行后续的 open 操作
   // We can run this synchronously since there is nothing to bootstrap.
   RETURN_NOT_OK(
       open_tablet_pool_->SubmitFunc(std::bind(&TSTabletManager::OpenTablet, this, meta, deleter)));

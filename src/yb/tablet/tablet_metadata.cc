@@ -251,6 +251,7 @@ std::string MakeTabletDirName(const TabletId& tablet_id) {
 
 // ============================================================================
 
+// 确定最终的 wal、data dir，存入到 meta 中，最终将 meta 写入到 磁盘
 Result<RaftGroupMetadataPtr> RaftGroupMetadata::CreateNew(
     const RaftGroupMetadataData& data, const std::string& data_root_dir,
     const std::string& wal_root_dir) {
@@ -539,6 +540,7 @@ Status RaftGroupMetadata::LoadFromSuperBlock(const RaftGroupReplicaSuperBlockPB&
   return Status::OK();
 }
 
+// meta 数据写入到磁盘
 Status RaftGroupMetadata::Flush() {
   TRACE_EVENT1("raft_group", "RaftGroupMetadata::Flush",
                "raft_group_id", raft_group_id_);

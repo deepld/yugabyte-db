@@ -96,6 +96,8 @@ using strings::Substitute;
 namespace yb {
 namespace tserver {
 
+// 向 master 发送心跳；处理：leader 切换、状态分段汇报
+//    根据上一次 response 返回的内容，决定 request 要发送的内容
 // Most of the actual logic of the heartbeater is inside this inner class,
 // to avoid having too many dependencies from the header itself.
 //
@@ -112,6 +114,7 @@ class Heartbeater::Thread {
   Status Stop();
   void TriggerASAP();
 
+  // 设置的是一个数组
   void set_master_addresses(server::MasterAddressesPtr master_addresses) {
     std::lock_guard<std::mutex> l(master_addresses_mtx_);
     master_addresses_ = std::move(master_addresses);
@@ -260,6 +263,7 @@ Status Heartbeater::Thread::FindLeaderMaster(CoarseTimePoint deadline, HostPort*
   if (master_sock_addrs.empty()) {
     return STATUS(NotFound, "Unable to resolve any of the master addresses!");
   }
+  // 发起 rpc 查询leader，成功后设置回调 LeaderMasterCallback
   auto data = std::make_shared<FindLeaderMasterData>();
   data->rpc = std::make_shared<GetLeaderMasterRpc>(
       Bind(&LeaderMasterCallback, data),
@@ -295,6 +299,7 @@ Status Heartbeater::Thread::ConnectToMaster() {
   auto new_proxy = std::make_unique<server::GenericServiceProxy>(
       &server_->proxy_cache(), leader_master_hostport_);
 
+  // 检查新的 master 可以 ping 成功，是 alive 的
   // Ping the master to verify that it's alive.
   server::PingRequestPB req;
   server::PingResponsePB resp;
@@ -320,6 +325,7 @@ Status Heartbeater::Thread::SetupRegistration(master::TSRegistrationPB* reg) {
   return Status::OK();
 }
 
+// 连续故障情况，就不快速发送多个 req
 int Heartbeater::Thread::GetMinimumHeartbeatMillis() const {
   // If we've failed a few heartbeats in a row, back off to the normal
   // interval, rather than retrying in a loop.
@@ -403,6 +409,7 @@ Status Heartbeater::Thread::TryHeartbeat() {
     req.set_ts_physical_time(0);
   }
 
+  // 填充完成之后，发送出去
   {
     VLOG_WITH_PREFIX(2) << "Sending heartbeat:\n" << req.DebugString();
     heartbeat_rtt_ = MonoDelta::kZero;
@@ -412,8 +419,12 @@ Status Heartbeater::Thread::TryHeartbeat() {
                           "Failed to send heartbeat");
     MonoTime end_time = MonoTime::Now();
     if (resp.has_error()) {
+
+      // 其他错误，直接退出
       if (resp.error().code() != master::MasterErrorPB::NOT_THE_LEADER) {
         return StatusFromPB(resp.error().status());
+
+      // leader变更
       } else {
         DCHECK(!resp.leader_master());
         // Treat a not-the-leader error code as leader_master=false.
@@ -425,6 +436,7 @@ Status Heartbeater::Thread::TryHeartbeat() {
       }
     }
 
+    // 更新本地 master 地址
     VLOG_WITH_PREFIX(2) << "Received heartbeat response:\n" << resp.DebugString();
     if (resp.has_master_config()) {
       LOG_WITH_PREFIX(INFO) << "Received heartbeat response with config " << resp.DebugString();
@@ -432,6 +444,7 @@ Status Heartbeater::Thread::TryHeartbeat() {
       RETURN_NOT_OK(server_->UpdateMasterAddresses(resp.master_config(), resp.leader_master()));
     }
 
+    // 重置 proxy，后续会再次选择 leader
     if (!resp.leader_master()) {
       // If the master is no longer a leader, reset proxy so that we can
       // determine the master and attempt to heartbeat during in the
@@ -481,6 +494,7 @@ Status Heartbeater::Thread::TryHeartbeat() {
     return STATUS(TryAgain, "");
   }
 
+  // 是否是 full report 的一部分
   // Handle TSHeartbeatResponsePB (e.g. tablets ack'd by master as processed)
   bool all_processed = req.tablet_report().remaining_tablet_count() == 0 &&
                        !last_hb_response_.tablet_report().processing_truncated();
@@ -502,6 +516,7 @@ Status Heartbeater::Thread::TryHeartbeat() {
     }
   }
 
+  // 是否调度 snapshot
   RETURN_NOT_OK(server_->tablet_manager()->UpdateSnapshotSchedules(
       last_hb_response_.snapshot_schedules()));
 
@@ -529,6 +544,7 @@ Status Heartbeater::Thread::DoHeartbeat() {
 
   for (;;) {
     auto status = TryHeartbeat();
+    // 向 leader 发生 full report 剩下的部分
     if (!status.ok() && status.IsTryAgain()) {
       continue;
     }
@@ -585,6 +601,8 @@ void Heartbeater::Thread::RunThread() {
           << ", code=" << s.CodeAsString();
       consecutive_failed_heartbeats_++;
       // If there's multiple masters...
+
+      // 当前发送到 leader master 的错误达到限制之后，选择下一个 leader
       if (master_addresses->size() > 1 || (*master_addresses)[0].size() > 1) {
         // If we encountered a network error (e.g., connection refused) or reached our failure
         // threshold.  Try determining the leader master again.  Heartbeats function as a watchdog,

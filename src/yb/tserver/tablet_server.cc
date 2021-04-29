@@ -167,6 +167,7 @@ Status TabletServer::ValidateMasterAddressResolution() const {
   return server::ResolveMasterAddresses(opts_.GetMasterAddresses(), nullptr);
 }
 
+// 在与 master heartbeat过程中，resp 中包含了 leader配置，就执行更新
 Status TabletServer::UpdateMasterAddresses(const consensus::RaftConfigPB& new_config,
                                            bool is_master_leader) {
   shared_ptr<server::MasterAddresses> new_master_addresses;
